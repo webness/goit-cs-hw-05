@@ -2,6 +2,8 @@ import requests
 import string
 import matplotlib.pyplot as plt
 from concurrent.futures import ThreadPoolExecutor
+import asyncio
+import time
 
 def map_word_count(text_chunk):
     text_chunk = text_chunk.lower()
@@ -39,6 +41,29 @@ def visualize_top_words(word_counts, top_n=10):
     print("Візуалізацію завершено. Відображаємо діаграму найпоширеніших слів...")
     plt.show()
 
+def map_processing(lines, num_threads=8):
+    with ThreadPoolExecutor(max_workers=num_threads) as executor:
+        map_results = list(executor.map(map_word_count, lines))
+    return map_results
+
+async def async_map_processing(lines, num_threads=8):
+    loop = asyncio.get_event_loop()
+    with ThreadPoolExecutor(max_workers=num_threads) as executor:
+        tasks = [loop.run_in_executor(executor, map_word_count, line) for line in lines]
+        map_results = await asyncio.gather(*tasks)
+    return map_results
+
+def visualize_timings(sync_time, async_time):
+    labels = ['Sync', 'Async']
+    times = [sync_time, async_time]
+    plt.figure(figsize=(6, 4))
+    plt.bar(labels, times, color=['coral', 'lightgreen'])
+    plt.ylabel('Час (секунди)')
+    plt.title('Порівняння часу обробки Map')
+    for i, t in enumerate(times):
+        plt.text(i, t, f"{t:.4f}s", ha='center', va='bottom')
+    plt.show()
+
 if __name__ == '__main__':
     url = "https://www.gutenberg.org/cache/epub/17989/pg17989.txt"
     response = requests.get(url)
@@ -47,9 +72,28 @@ if __name__ == '__main__':
     lines = text_data.split('\n')
     print("Текст поділено на рядки")
     num_threads = 8
-    with ThreadPoolExecutor(max_workers=num_threads) as executor:
-        map_results = list(executor.map(map_word_count, lines))
-    print("Завершено крок Map. Кількість часткових результатів:", len(map_results))
-    word_counts = reduce_word_counts(map_results)
-    print("Завершено крок Reduce. Унікальних слів:", len(word_counts))
-    visualize_top_words(word_counts, top_n=10)
+
+    start = time.perf_counter()
+    sync_map_results = map_processing(lines, num_threads)
+    sync_time = time.perf_counter() - start
+    print(f"Синхронна обробка Map завершена за {sync_time:.4f} секунд")
+
+    start = time.perf_counter()
+    async_map_results = asyncio.run(async_map_processing(lines, num_threads))
+    async_time = time.perf_counter() - start
+    print(f"Асинхронна обробка Map завершена за {async_time:.4f} секунд")
+
+    if sync_map_results == async_map_results:
+        print("Результати синхронної та асинхронної обробки Map однакові.")
+    else:
+        print("Розбіжності в результатах обробки Map!")
+
+    sync_word_counts = reduce_word_counts(sync_map_results)
+    async_word_counts = reduce_word_counts(async_map_results)
+    if sync_word_counts == async_word_counts:
+        print("Результати редукції для обох методів однакові.")
+    else:
+        print("Результати редукції відрізняються!")
+
+    visualize_top_words(sync_word_counts, top_n=10)
+    visualize_timings(sync_time, async_time)
